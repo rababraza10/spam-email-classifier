@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Spam Email Classifier — Naïve Bayes</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Orbitron:wght@700;900&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+<style>
+  :root{
+    --bg:#06060e;--surface:#0d0d1c;--panel:#111126;--border:#1e1e3a;
+    --accent:#00f5c3;--accent2:#7c5cfc;--spam:#ff3860;--ham:#23d160;
+    --text:#d4d4f0;--muted:#6060a0;
+    --font-head:'Orbitron',monospace;--font-mono:'Space Mono',monospace;--font-body:'DM Sans',sans-serif;
+  }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:var(--font-body);min-height:100vh;overflow-x:hidden}
+  body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.12) 2px,rgba(0,0,0,.12) 4px);pointer-events:none;z-index:1000}
+  body::after{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(0,245,195,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(0,245,195,.03) 1px,transparent 1px);background-size:40px 40px;pointer-events:none;z-index:0}
+  .app{position:relative;z-index:1;max-width:1160px;margin:0 auto;padding:2rem 1.5rem 4rem}
+  header{text-align:center;padding:3rem 0 2rem;animation:fadeDown .7s ease both}
+  .badge{display:inline-block;font-family:var(--font-mono);font-size:.7rem;letter-spacing:.15em;color:var(--accent);border:1px solid var(--accent);padding:.25rem .75rem;border-radius:2px;margin-bottom:1rem;text-transform:uppercase;box-shadow:0 0 12px rgba(0,245,195,.2)}
+  h1{font-family:var(--font-head);font-size:clamp(1.6rem,4vw,2.8rem);color:#fff;letter-spacing:.06em;line-height:1.1;text-shadow:0 0 30px rgba(0,245,195,.3)}
+  h1 span{color:var(--accent)}
+  .subtitle{color:var(--muted);font-size:.9rem;margin-top:.75rem;font-family:var(--font-mono)}
+  .pulse-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 6px var(--accent);display:inline-block;animation:pulse 1.5s ease-in-out infinite}
+
+  /* tabs */
+  .tabs{display:flex;gap:.5rem;margin-bottom:1.5rem}
+  .tab{font-family:var(--font-mono);font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;padding:.55rem 1.2rem;border-radius:4px;border:1px solid var(--border);background:var(--surface);color:var(--muted);cursor:pointer;transition:all .2s}
+  .tab.active{border-color:var(--accent);color:var(--accent);background:rgba(0,245,195,.06)}
+  .tab:hover:not(.active){border-color:var(--muted);color:var(--text)}
+
+  .grid{display:grid;grid-template-columns:1fr 400px;gap:1.5rem}
+  @media(max-width:820px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:1.5rem;animation:fadeUp .6s ease both}
+  .card-label{font-family:var(--font-mono);font-size:.68rem;letter-spacing:.2em;color:var(--accent);text-transform:uppercase;margin-bottom:1rem;display:flex;align-items:center;gap:.5rem}
+  .card-label::after{content:'';flex:1;height:1px;background:var(--border)}
+
+  .email-input{width:100%;min-height:190px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font-mono);font-size:.82rem;line-height:1.7;padding:1rem;resize:vertical;outline:none;transition:border-color .2s}
+  .email-input:focus{border-color:var(--accent)}
+  .email-input::placeholder{color:var(--muted)}
+
+  .quick-pills{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.9rem}
+  .pill{font-size:.72rem;font-family:var(--font-mono);padding:.3rem .75rem;border-radius:3px;border:1px solid var(--border);background:var(--surface);color:var(--muted);cursor:pointer;transition:all .18s}
+  .pill:hover{border-color:var(--accent);color:var(--accent)}
+  .pill.sp:hover{border-color:var(--spam);color:var(--spam)}
+
+  .classify-btn{width:100%;margin-top:1.1rem;padding:.9rem;background:transparent;border:2px solid var(--accent);border-radius:6px;color:var(--accent);font-family:var(--font-head);font-size:.78rem;letter-spacing:.15em;cursor:pointer;transition:all .2s;position:relative;overflow:hidden;text-transform:uppercase}
+  .classify-btn::before{content:'';position:absolute;inset:0;background:var(--accent);transform:scaleX(0);transform-origin:left;transition:transform .25s ease}
+  .classify-btn span{position:relative;z-index:1}
+  .classify-btn:hover::before{transform:scaleX(1)}
+  .classify-btn:hover{color:var(--bg)}
+
+  .verdict-box{display:none;margin-top:1.2rem;border-radius:6px;padding:1.2rem 1.4rem;border-left:4px solid;animation:popIn .3s cubic-bezier(.34,1.56,.64,1) both}
+  .verdict-box.spam{border-color:var(--spam);background:rgba(255,56,96,.08)}
+  .verdict-box.ham{border-color:var(--ham);background:rgba(35,209,96,.08)}
+  .verdict-label{font-family:var(--font-head);font-size:1.5rem;letter-spacing:.1em;font-weight:900}
+  .verdict-box.spam .verdict-label{color:var(--spam);text-shadow:0 0 20px rgba(255,56,96,.5)}
+  .verdict-box.ham  .verdict-label{color:var(--ham); text-shadow:0 0 20px rgba(35,209,96,.5)}
+  .verdict-sub{font-family:var(--font-mono);font-size:.72rem;color:var(--muted);margin-top:.3rem}
+
+  .raw-scores{margin-top:.85rem;background:var(--surface);border-radius:4px;padding:.65rem 1rem;font-family:var(--font-mono);font-size:.71rem;color:var(--muted);line-height:1.8}
+  .raw-scores span{color:var(--text)}
+
+  .conf-row{display:flex;justify-content:space-between;font-size:.78rem;font-family:var(--font-mono);margin-top:1rem;margin-bottom:.35rem}
+  .conf-track{height:6px;background:var(--border);border-radius:3px;overflow:hidden}
+  .conf-fill{height:100%;border-radius:3px;width:0;transition:width .6s cubic-bezier(.4,0,.2,1)}
+  .spam-fill{background:linear-gradient(90deg,#ff3860,#ff6b6b)}
+  .ham-fill{background:linear-gradient(90deg,#23d160,#00f5c3)}
+
+  .words-grid{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.5rem}
+  .word-chip{font-family:var(--font-mono);font-size:.68rem;padding:.2rem .55rem;border-radius:3px;border:1px solid;opacity:0;transform:translateY(4px);transition:opacity .2s,transform .2s}
+  .word-chip.sw{border-color:rgba(255,56,96,.4);color:var(--spam);background:rgba(255,56,96,.07)}
+  .word-chip.hw{border-color:rgba(35,209,96,.4);color:var(--ham);background:rgba(35,209,96,.07)}
+  .word-chip.vis{opacity:1;transform:translateY(0)}
+
+  .sidebar{display:flex;flex-direction:column;gap:1.5rem}
+  .metrics-grid{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-top:.25rem}
+  .metric-cell{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:.9rem .8rem;text-align:center}
+  .metric-val{font-family:var(--font-head);font-size:1.25rem;color:var(--accent);letter-spacing:.06em}
+  .metric-name{font-family:var(--font-mono);font-size:.6rem;color:var(--muted);text-transform:uppercase;letter-spacing:.12em;margin-top:.2rem}
+
+  .cm-wrap{display:grid;grid-template-columns:auto 1fr 1fr;grid-template-rows:auto 1fr 1fr;gap:4px;margin-top:.5rem}
+  .cm-cell{background:var(--surface);border:1px solid var(--border);border-radius:4px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:.7rem .4rem;font-family:var(--font-head);font-size:1.1rem}
+  .cm-cell .cm-sub{font-family:var(--font-mono);font-size:.55rem;color:var(--muted);margin-top:.1rem;letter-spacing:.08em}
+  .cm-head{background:transparent;border:none;font-family:var(--font-mono);font-size:.6rem;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;display:flex;align-items:center;justify-content:center}
+  .tp,.tn{color:var(--ham)} .fp,.fn{color:var(--spam)}
+
+  .ds-row{display:flex;justify-content:space-between;align-items:center;padding:.5rem 0;border-bottom:1px solid var(--border);font-size:.8rem;font-family:var(--font-mono)}
+  .ds-row:last-child{border-bottom:none}
+  .ds-val{color:var(--accent);font-weight:700}
+
+  /* dataset table */
+  .data-table{width:100%;border-collapse:collapse;font-family:var(--font-mono);font-size:.72rem;margin-top:.5rem}
+  .data-table th{text-align:left;padding:.5rem .7rem;border-bottom:1px solid var(--border);color:var(--muted);letter-spacing:.1em;text-transform:uppercase;font-size:.62rem}
+  .data-table td{padding:.5rem .7rem;border-bottom:1px solid rgba(30,30,58,.5);color:var(--text);vertical-align:top}
+  .data-table tr:last-child td{border-bottom:none}
+  .data-table .lbl{font-weight:700;white-space:nowrap}
+  .data-table .lbl.spam{color:var(--spam)} .data-table .lbl.ham{color:var(--ham)}
+  .data-table tbody tr:hover td{background:rgba(0,245,195,.03)}
+
+  /* test results table */
+  .test-row-correct td{background:rgba(35,209,96,.04)}
+  .test-row-wrong   td{background:rgba(255,56,96,.04)}
+  .pred-badge{display:inline-block;padding:.1rem .5rem;border-radius:3px;font-size:.65rem;font-weight:700}
+  .pred-badge.spam{background:rgba(255,56,96,.15);color:var(--spam);border:1px solid rgba(255,56,96,.3)}
+  .pred-badge.ham {background:rgba(35,209,96,.15); color:var(--ham); border:1px solid rgba(35,209,96,.3)}
+  .check{color:var(--ham)} .cross{color:var(--spam)}
+
+  @keyframes fadeDown{from{opacity:0;transform:translateY(-16px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes popIn{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:scale(1)}}
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.7)}}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header>
+    <div class="badge"><span class="pulse-dot"></span>&nbsp; Live Classifier</div>
+    <h1>SPAM <span>DETECTOR</span></h1>
+    <p class="subtitle">Naïve Bayes · train_emails.csv + test_emails.csv</p>
+  </header>
+
+  <!-- TABS -->
+  <div class="tabs">
+    <div class="tab active" onclick="showTab('classify')">⚡ Classify</div>
+    <div class="tab" onclick="showTab('train')">📁 Training Data</div>
+    <div class="tab" onclick="showTab('test')">🧪 Test Results</div>
+  </div>
+
+  <!-- ════════════ TAB: CLASSIFY ════════════ -->
+  <div id="tab-classify">
+    <div class="grid">
+      <div>
+        <div class="card">
+          <div class="card-label">✉ Email Input</div>
+          <textarea class="email-input" id="emailText" placeholder="Type or paste an email to classify..."></textarea>
+          <div class="quick-pills" id="quickPills"></div>
+          <button class="classify-btn" onclick="classify()"><span>⚡ Run Classifier</span></button>
+
+          <div class="verdict-box" id="verdictBox">
+            <div class="verdict-label" id="verdictLabel">—</div>
+            <div class="verdict-sub"   id="verdictSub">—</div>
+            <div class="raw-scores">
+              Spam Score:&nbsp;<span id="rawSpam">—</span><br>
+              Ham&nbsp; Score:&nbsp;<span id="rawHam">—</span>
+            </div>
+            <div class="conf-row"><span>Spam probability</span><span id="cA">—</span></div>
+            <div class="conf-track"><div class="conf-fill spam-fill" id="bSpam"></div></div>
+            <div class="conf-row" style="margin-top:.6rem"><span>Ham probability</span><span id="cB">—</span></div>
+            <div class="conf-track"><div class="conf-fill ham-fill" id="bHam"></div></div>
+            <div class="card-label" style="margin-top:1rem">Triggered Words</div>
+            <div class="words-grid" id="wordsGrid"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sidebar">
+        <div class="card">
+          <div class="card-label">📊 Train-Set Metrics</div>
+          <div class="metrics-grid">
+            <div class="metric-cell"><div class="metric-val" id="mAcc">—</div><div class="metric-name">Accuracy</div></div>
+            <div class="metric-cell"><div class="metric-val" id="mPrec">—</div><div class="metric-name">Precision</div></div>
+            <div class="metric-cell"><div class="metric-val" id="mRec">—</div><div class="metric-name">Recall</div></div>
+            <div class="metric-cell"><div class="metric-val" id="mF1">—</div><div class="metric-name">F1 Score</div></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-label">🧪 Test-Set Metrics</div>
+          <div class="metrics-grid">
+            <div class="metric-cell"><div class="metric-val" id="tmAcc">—</div><div class="metric-name">Accuracy</div></div>
+            <div class="metric-cell"><div class="metric-val" id="tmPrec">—</div><div class="metric-name">Precision</div></div>
+            <div class="metric-cell"><div class="metric-val" id="tmRec">—</div><div class="metric-name">Recall</div></div>
+            <div class="metric-cell"><div class="metric-val" id="tmF1">—</div><div class="metric-name">F1 Score</div></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-label">🟩 Confusion Matrix (Test)</div>
+          <div class="cm-wrap">
+            <div class="cm-head"></div>
+            <div class="cm-head">Pred: Spam</div>
+            <div class="cm-head">Pred: Ham</div>
+            <div class="cm-head" style="writing-mode:vertical-lr;transform:rotate(180deg)">Actual: Spam</div>
+            <div class="cm-cell tp"><span id="cmTP">—</span><span class="cm-sub">TP</span></div>
+            <div class="cm-cell fn"><span id="cmFN">—</span><span class="cm-sub">FN</span></div>
+            <div class="cm-head" style="writing-mode:vertical-lr;transform:rotate(180deg)">Actual: Ham</div>
+            <div class="cm-cell fp"><span id="cmFP">—</span><span class="cm-sub">FP</span></div>
+            <div class="cm-cell tn"><span id="cmTN">—</span><span class="cm-sub">TN</span></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-label">📁 Dataset Info</div>
+          <div class="ds-row"><span>Train emails</span><span class="ds-val" id="dsTrain">—</span></div>
+          <div class="ds-row"><span>Test emails</span><span class="ds-val" id="dsTest">—</span></div>
+          <div class="ds-row"><span>Train spam / ham</span><span class="ds-val" id="dsTrainSH">—</span></div>
+          <div class="ds-row"><span>Test spam / ham</span><span class="ds-val" id="dsTestSH">—</span></div>
+          <div class="ds-row"><span>Vocabulary size</span><span class="ds-val" id="dsVocab">—</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════ TAB: TRAINING DATA ════════════ -->
+  <div id="tab-train" style="display:none">
+    <div class="card">
+      <div class="card-label">📁 train_emails.csv</div>
+      <table class="data-table">
+        <thead><tr><th>#</th><th>Label</th><th>Text</th></tr></thead>
+        <tbody id="trainTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ════════════ TAB: TEST RESULTS ════════════ -->
+  <div id="tab-test" style="display:none">
+    <div class="card">
+      <div class="card-label">🧪 test_emails.csv — Predictions vs Actual</div>
+      <table class="data-table">
+        <thead><tr><th>#</th><th>Actual</th><th>Predicted</th><th>✓</th><th>Text</th></tr></thead>
+        <tbody id="testTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div><!-- /app -->
+
+<script>
+/* ════════════════════════════════════════════
+   YOUR EXACT DATASETS (from CSV files)
+   ════════════════════════════════════════════ */
+const TRAIN = [
+  {label:'spam', text:'Win a free iPhone now click here'},
+  {label:'spam', text:'Limited time offer claim your prize'},
+  {label:'spam', text:'Congratulations you are a lucky winner'},
+  {label:'spam', text:'Get rich quick scheme click now'},
+  {label:'spam', text:'Free entry in a contest win money'},
+  {label:'spam', text:'Exclusive deal just for you act now'},
+  {label:'spam', text:'You have been selected for a reward'},
+  {label:'spam', text:'Claim your free vacation now'},
+  {label:'ham',  text:'Hi Rabab are we meeting tomorrow'},
+  {label:'ham',  text:'Please submit your assignment today'},
+  {label:'ham',  text:'Can we reschedule our meeting'},
+  {label:'ham',  text:"Don't forget to bring your notes"},
+  {label:'ham',  text:'Lunch at 1 pm works for me'},
+  {label:'ham',  text:'Project deadline is next week'},
+  {label:'ham',  text:"Let's discuss the report tomorrow"},
+  {label:'ham',  text:'Call me when you are free'},
+];
+
+const TEST = [
+  {label:'spam', text:'Win money now click this link'},
+  {label:'spam', text:'You have won a free ticket'},
+  {label:'spam', text:'Claim your prize now'},
+  {label:'ham',  text:'Are we still meeting today'},
+  {label:'ham',  text:'Please review the document'},
+  {label:'ham',  text:"Let's have lunch tomorrow"},
+];
+
+/* ════════════════════════════════════════════
+   STOPWORDS
+   ════════════════════════════════════════════ */
+const SW = new Set(['i','me','my','we','our','you','your','he','she','it','they','their',
+  'is','are','was','were','be','been','have','has','had','do','does','did','will','would',
+  'should','may','might','can','could','a','an','the','and','but','or','for','so','yet',
+  'at','by','in','of','on','to','up','as','if','no','not','with','from','this','that',
+  'these','those','there','here','just','also','then','than','about','after','before','into',
+  'more','some','any','all','its','only','over','very','when','how','what','who','which',
+  'am','pm','re','us','hi','don','let','please']);
+
+function tokenize(t){
+  return t.toLowerCase().replace(/[^a-z\s]/g,' ').split(/\s+/).filter(w=>w.length>1&&!SW.has(w));
+}
+
+/* ════════════════════════════════════════════
+   NAIVE BAYES
+   ════════════════════════════════════════════ */
+class NB {
+  constructor(){this.reset()}
+  reset(){
+    this.cc={spam:0,ham:0};this.wc={spam:{},ham:{}};
+    this.vocab=new Set();this.total=0;this.wt={spam:0,ham:0};
+  }
+  train(data){
+    this.reset();
+    for(const {label,text} of data){
+      const toks=tokenize(text);
+      this.cc[label]=(this.cc[label]||0)+1; this.total++;
+      for(const w of toks){this.vocab.add(w);this.wc[label][w]=(this.wc[label][w]||0)+1;}
+    }
+    this.wt.spam=Object.values(this.wc.spam).reduce((a,b)=>a+b,0);
+    this.wt.ham =Object.values(this.wc.ham ).reduce((a,b)=>a+b,0);
+  }
+  lp(w,lbl){return Math.log(((this.wc[lbl][w]||0)+1)/(this.wt[lbl]+this.vocab.size));}
+  predict(text){
+    const toks=tokenize(text);
+    let ls=Math.log((this.cc.spam||1)/this.total);
+    let lh=Math.log((this.cc.ham ||1)/this.total);
+    const wi=[];
+    for(const w of toks){
+      const a=this.lp(w,'spam'),b=this.lp(w,'ham');
+      ls+=a; lh+=b; wi.push({word:w,diff:a-b});
+    }
+    const mx=Math.max(ls,lh),es=Math.exp(ls-mx),eh=Math.exp(lh-mx);
+    return{label:ls>=lh?'spam':'ham',pSpam:es/(es+eh),pHam:eh/(es+eh),
+           logSpam:ls,logHam:lh,
+           topWords:wi.sort((a,b)=>Math.abs(b.diff)-Math.abs(a.diff)).slice(0,10)};
+  }
+  evalSet(data){
+    let tp=0,tn=0,fp=0,fn=0;
+    const rows=[];
+    for(const {label,text} of data){
+      const r=this.predict(text);
+      rows.push({...r,actual:label,text});
+      if(r.label==='spam'&&label==='spam')tp++;
+      else if(r.label==='ham'&&label==='ham')tn++;
+      else if(r.label==='spam')fp++;
+      else fn++;
+    }
+    const acc=(tp+tn)/(tp+tn+fp+fn)||0;
+    const pr=tp/(tp+fp)||0,re=tp/(tp+fn)||0;
+    return{tp,tn,fp,fn,acc,prec:pr,rec:re,f1:2*pr*re/(pr+re)||0,rows};
+  }
+}
+
+const nb=new NB();
+nb.train(TRAIN);
+
+const trainEv=nb.evalSet(TRAIN);
+const testEv =nb.evalSet(TEST);
+
+const pct=v=>(v*100).toFixed(1)+'%';
+
+/* ── Train metrics ── */
+document.getElementById('mAcc' ).textContent=pct(trainEv.acc);
+document.getElementById('mPrec').textContent=pct(trainEv.prec);
+document.getElementById('mRec' ).textContent=pct(trainEv.rec);
+document.getElementById('mF1'  ).textContent=pct(trainEv.f1);
+
+/* ── Test metrics ── */
+document.getElementById('tmAcc' ).textContent=pct(testEv.acc);
+document.getElementById('tmPrec').textContent=pct(testEv.prec);
+document.getElementById('tmRec' ).textContent=pct(testEv.rec);
+document.getElementById('tmF1'  ).textContent=pct(testEv.f1);
+
+/* ── Confusion matrix (test set) ── */
+document.getElementById('cmTP').textContent=testEv.tp;
+document.getElementById('cmTN').textContent=testEv.tn;
+document.getElementById('cmFP').textContent=testEv.fp;
+document.getElementById('cmFN').textContent=testEv.fn;
+
+/* ── Dataset info ── */
+const trSpam=TRAIN.filter(d=>d.label==='spam').length;
+const trHam =TRAIN.filter(d=>d.label==='ham').length;
+const teSpam=TEST.filter(d=>d.label==='spam').length;
+const teHam =TEST.filter(d=>d.label==='ham').length;
+document.getElementById('dsTrain').textContent=TRAIN.length;
+document.getElementById('dsTest' ).textContent=TEST.length;
+document.getElementById('dsTrainSH').textContent=trSpam+' / '+trHam;
+document.getElementById('dsTestSH' ).textContent=teSpam+' / '+teHam;
+document.getElementById('dsVocab').textContent=nb.vocab.size;
+
+/* ── Quick pills (from training data) ── */
+const pillContainer=document.getElementById('quickPills');
+const spamEx=TRAIN.filter(d=>d.label==='spam').slice(0,3);
+const hamEx =TRAIN.filter(d=>d.label==='ham' ).slice(0,3);
+[...spamEx,...hamEx].forEach((d,i)=>{
+  const p=document.createElement('span');
+  p.className='pill'+(d.label==='spam'?' sp':'');
+  p.textContent=(d.label==='spam'?'🔴':'🟢')+' '+d.text.split(' ').slice(0,4).join(' ')+'…';
+  p.onclick=()=>{document.getElementById('emailText').value=d.text;document.getElementById('verdictBox').style.display='none';}
+  pillContainer.appendChild(p);
+});
+
+/* ── Training table ── */
+const tBody=document.getElementById('trainTableBody');
+TRAIN.forEach((d,i)=>{
+  const tr=document.createElement('tr');
+  tr.innerHTML=`<td style="color:var(--muted)">${i+1}</td>
+    <td><span class="lbl ${d.label}">${d.label.toUpperCase()}</span></td>
+    <td>${d.text}</td>`;
+  tBody.appendChild(tr);
+});
+
+/* ── Test results table ── */
+const teBody=document.getElementById('testTableBody');
+testEv.rows.forEach((r,i)=>{
+  const correct=r.label===r.actual;
+  const tr=document.createElement('tr');
+  tr.className=correct?'test-row-correct':'test-row-wrong';
+  tr.innerHTML=`<td style="color:var(--muted)">${i+1}</td>
+    <td><span class="lbl ${r.actual}">${r.actual.toUpperCase()}</span></td>
+    <td><span class="pred-badge ${r.label}">${r.label.toUpperCase()}</span></td>
+    <td class="${correct?'check':'cross'}">${correct?'✓':'✗'}</td>
+    <td>${r.text}</td>`;
+  teBody.appendChild(tr);
+});
+
+/* ════════════════════════════════════════════
+   CLASSIFY
+   ════════════════════════════════════════════ */
+function classify(){
+  const text=document.getElementById('emailText').value.trim();
+  if(!text){alert('Enter some email text first!');return;}
+  const r=nb.predict(text);
+  const box=document.getElementById('verdictBox');
+  box.className='verdict-box '+r.label; box.style.display='block';
+  document.getElementById('verdictLabel').textContent=r.label==='spam'?'🚨 SPAM':'✅ HAM (Not Spam)';
+  document.getElementById('verdictSub').textContent=r.label==='spam'
+    ?'Classified as SPAM with '+(r.pSpam*100).toFixed(1)+'% confidence'
+    :'Classified as legitimate with '+(r.pHam*100).toFixed(1)+'% confidence';
+  document.getElementById('rawSpam').textContent=r.logSpam.toFixed(4);
+  document.getElementById('rawHam' ).textContent=r.logHam.toFixed(4);
+  document.getElementById('cA').textContent=pct(r.pSpam);
+  document.getElementById('cB').textContent=pct(r.pHam);
+  requestAnimationFrame(()=>{
+    document.getElementById('bSpam').style.width=pct(r.pSpam);
+    document.getElementById('bHam' ).style.width=pct(r.pHam);
+  });
+  const wg=document.getElementById('wordsGrid'); wg.innerHTML='';
+  r.topWords.forEach((w,i)=>{
+    const c=document.createElement('span');
+    c.className='word-chip '+(w.diff>0?'sw':'hw');
+    c.textContent=w.word; wg.appendChild(c);
+    setTimeout(()=>c.classList.add('vis'),i*60);
+  });
+}
+
+/* ════════════════════════════════════════════
+   TABS
+   ════════════════════════════════════════════ */
+function showTab(name){
+  ['classify','train','test'].forEach(t=>{
+    document.getElementById('tab-'+t).style.display=t===name?'block':'none';
+  });
+  document.querySelectorAll('.tab').forEach((el,i)=>{
+    el.classList.toggle('active',['classify','train','test'][i]===name);
+  });
+}
+
+/* auto classify on load */
+window.addEventListener('load',()=>{
+  document.getElementById('emailText').value='Call me when you are free';
+  setTimeout(classify,400);
+});
+</script>
+</body>
+</html>
